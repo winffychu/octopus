@@ -27,7 +27,7 @@ import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/comp
 
 function formatTime(timestamp: number): string {
     const date = new Date(timestamp * 1000);
-    return date.toLocaleString('zh-CN', {
+    return date.toLocaleString(undefined, {
         month: '2-digit',
         day: '2-digit',
         hour: '2-digit',
@@ -47,6 +47,77 @@ interface RetryBadgeWithTooltipProps {
     attempts: ChannelAttempt[];
 }
 
+type LogCardTranslate = (key: string, values?: Record<string, string | number>) => string;
+
+function translateLogCard(t: LogCardTranslate, key: string, fallback: string, values?: Record<string, string | number>): string {
+    const translated = t(key, values);
+    if (!translated || translated === key || translated === `log.card.${key}`) {
+        return fallback;
+    }
+
+    return translated;
+}
+
+function attemptStatusMeta(status: ChannelAttempt['status'], t: (key: string) => string) {
+    switch (status) {
+        case 'success':
+            return { label: t('success'), className: 'bg-primary/15 text-primary' };
+        case 'failed':
+            return { label: t('failed'), className: 'bg-destructive/15 text-destructive' };
+        case 'circuit_break':
+            return { label: t('circuitBreak'), className: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' };
+        case 'skipped':
+            return { label: t('skipped'), className: 'bg-muted text-muted-foreground' };
+        default:
+            return { label: String(status), className: 'bg-muted text-muted-foreground' };
+    }
+}
+
+function getAttemptKeyText(attempt: ChannelAttempt, t: (key: string, values?: Record<string, string | number>) => string): string {
+    if (!attempt.channel_key_id) {
+        return '';
+    }
+
+    const remark = attempt.channel_key_remark?.trim();
+    return remark ? `Key #${attempt.channel_key_id}（${remark}）` : `Key #${attempt.channel_key_id}`;
+}
+
+function getAttemptSkipReasonText(attempt: ChannelAttempt, t: (key: string) => string): string {
+    switch (attempt.skip_reason) {
+        case 'rate_limited':
+            return translateLogCard(t, 'skipReason.rate_limited', 'Rate Limited');
+        case 'concurrency':
+            return translateLogCard(t, 'skipReason.concurrency', 'Concurrency Limit');
+        case 'cooldown_429':
+            return translateLogCard(t, 'skipReason.cooldown_429', '429 Cooldown');
+        case 'circuit_open':
+            return translateLogCard(t, 'skipReason.circuit_open', 'Circuit Breaker Open');
+        case 'disabled':
+            return translateLogCard(t, 'skipReason.disabled', 'Disabled');
+        case 'no_key':
+            return translateLogCard(t, 'skipReason.no_key', 'No Available Key');
+        default:
+            return '';
+    }
+}
+
+function getAttemptErrorClassText(attempt: ChannelAttempt, t: (key: string) => string): string {
+    switch (attempt.error_class) {
+        case 'stop_code':
+            return translateLogCard(t, 'errorClass.stop_code', 'Stop Code');
+        case 'upstream_error':
+            return translateLogCard(t, 'errorClass.upstream_error', 'Upstream Error');
+        case 'network_error':
+            return translateLogCard(t, 'errorClass.network_error', 'Network Error');
+        case 'timeout':
+            return translateLogCard(t, 'errorClass.timeout', 'Timeout');
+        case 'circuit_open':
+            return translateLogCard(t, 'errorClass.circuit_open', 'Circuit Breaker Open');
+        default:
+            return attempt.error_class ?? '';
+    }
+}
+
 function RetryBadgeWithTooltip({ channelName, brandColor, attempts }: RetryBadgeWithTooltipProps) {
     const t = useTranslations('log.card');
 
@@ -62,38 +133,46 @@ function RetryBadgeWithTooltip({ channelName, brandColor, attempts }: RetryBadge
                     {channelName}
                 </Badge>
             </TooltipTrigger>
-            <TooltipContent className="border bg-card p-2 min-w-[280px] shadow-sm rounded-3xl flex flex-col gap-1">
-                {attempts.map((attempt, idx) => (
-                    <div key={idx} className="flex flex-col w-full">
-                        <div className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50 transition-colors">
-                            <Badge
-                                className={cn(
-                                    "h-5 shrink-0 px-1.5 text-[10px] font-bold uppercase shadow-none border-0",
-                                    attempt.status === 'success'
-                                        ? "bg-primary/15 text-primary"
-                                        : "bg-destructive/15 text-destructive"
-                                )}
-                            >
-                                {attempt.status === 'success' ? t('success') : t('failed')}
-                            </Badge>
-                            <div className="flex min-w-0 flex-col flex-1">
-                                <span className="truncate text-xs font-semibold text-foreground">
-                                    {attempt.channel_name}
-                                </span>
-                                <span className="text-[10px] text-muted-foreground">
-                                    {attempt.model_name} • {formatDuration(attempt.duration)}
-                                </span>
+            <TooltipContent className="border bg-card p-2 min-w-[320px] shadow-sm rounded-3xl flex flex-col gap-1">
+                {attempts.map((attempt, idx) => {
+                    const meta = attemptStatusMeta(attempt.status, t);
+                    const skipReasonText = getAttemptSkipReasonText(attempt, t);
+                    const errorClassText = getAttemptErrorClassText(attempt, t);
+                    const detail = [skipReasonText, errorClassText, attempt.msg].filter(Boolean).join(' · ');
+                    const keyText = getAttemptKeyText(attempt, t);
+                    return (
+                        <div key={idx} className="flex flex-col w-full">
+                            <div className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50 transition-colors">
+                                <Badge
+                                    className={cn(
+                                        'h-5 shrink-0 px-1.5 text-[10px] font-bold uppercase shadow-none border-0',
+                                        meta.className
+                                    )}
+                                >
+                                    {meta.label}
+                                </Badge>
+                                <div className="flex min-w-0 flex-col flex-1">
+                                    <span className="truncate text-xs font-semibold text-foreground">
+                                        {attempt.channel_name}
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground">
+                                        {attempt.model_name} · {formatDuration(attempt.duration)}{keyText ? ` · ${keyText}` : ''}
+                                    </span>
+                                    {detail ? (
+                                        <span className="text-[10px] text-muted-foreground/80 truncate" title={detail}>
+                                            {detail}
+                                        </span>
+                                    ) : null}
+                                </div>
                             </div>
-                        </div>
-                        {
-                            idx < attempts.length - 1 && (
+                            {idx < attempts.length - 1 && (
                                 <div className="flex justify-center py-0.5">
                                     <ArrowDown className="size-3 text-muted-foreground/30" />
                                 </div>
-                            )
-                        }
-                    </div>
-                ))}
+                            )}
+                        </div>
+                    );
+                })}
             </TooltipContent>
         </Tooltip >
     );
@@ -406,9 +485,12 @@ export function LogCard({ log }: { log: RelayLog }) {
                                                                                 {formatDuration(attempt.duration)}
                                                                             </span>
                                                                         </div>
-                                                                        {attempt.msg && (
-                                                                            <div className="text-destructive/90 pl-2 border-l-2 border-destructive/30 text-[11px] leading-relaxed">
-                                                                                {attempt.msg}
+                                                                        {(attempt.msg || attempt.skip_reason || attempt.error_class || attempt.channel_key_id) && (
+                                                                            <div className="pl-2 border-l-2 border-destructive/30 text-[11px] leading-relaxed text-muted-foreground">
+                                                                                <div>{getAttemptKeyText(attempt, t)}</div>
+                                                                                <div>{getAttemptSkipReasonText(attempt, t)}</div>
+                                                                                <div>{getAttemptErrorClassText(attempt, t)}</div>
+                                                                                <div>{attempt.msg ?? ''}</div>
                                                                             </div>
                                                                         )}
                                                                     </div>

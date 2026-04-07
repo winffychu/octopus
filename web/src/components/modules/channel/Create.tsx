@@ -19,7 +19,7 @@ export function CreateDialogContent() {
         custom_header: [],
         channel_proxy: '',
         param_override: '',
-        keys: [{ enabled: true, channel_key: '', remark: '' }],
+        keys: [{ enabled: true, channel_key: '', remark: '', rpm_limit: 0, concurrency_limit: 0, cooldown_on_429_sec: 30 }],
         model: '',
         custom_model: '',
         auto_sync: false,
@@ -38,7 +38,14 @@ export function CreateDialogContent() {
         }));
         const normalizedKeys = formData.keys
             .filter((k) => k.channel_key.trim())
-            .map((k) => ({ enabled: k.enabled, channel_key: k.channel_key, remark: k.remark ?? '' }));
+            .map((k) => ({
+                enabled: k.enabled,
+                channel_key: k.channel_key,
+                remark: k.remark ?? '',
+                rpm_limit: Number(k.rpm_limit ?? 0),
+                concurrency_limit: Number(k.concurrency_limit ?? 0),
+                cooldown_on_429_sec: Number(k.cooldown_on_429_sec ?? 30),
+            }));
         const normalizedHeaders = (formData.custom_header ?? [])
             .map((h) => ({ header_key: h.header_key.trim(), header_value: h.header_value }))
             .filter((h) => h.header_key && h.header_value !== '');
@@ -71,7 +78,7 @@ export function CreateDialogContent() {
                         custom_header: [],
                         channel_proxy: '',
                         param_override: '',
-                        keys: [{ enabled: true, channel_key: '', remark: '' }],
+                        keys: [{ enabled: true, channel_key: '', remark: '', rpm_limit: 0, concurrency_limit: 0, cooldown_on_429_sec: 30 }],
                         model: '',
                         custom_model: '',
                         auto_sync: false,

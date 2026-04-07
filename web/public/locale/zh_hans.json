@@ -182,7 +182,11 @@
                 "label": "最大冷却时间（秒）",
                 "placeholder": "请输入最大冷却时间"
             },
-            "hint": "当渠道连续失败达到阈值后触发熔断，冷却时间按指数退避增长，上限为最大冷却时间"
+            "hint": "当渠道连续失败达到阈值后触发熔断，冷却时间按指数退避增长，上限为最大冷却时间",
+            "stopCodes": {
+                "label": "停止码（逗号分隔）",
+                "placeholder": "例如：400,422"
+            }
         },
         "saved": "已保存",
         "backup": {
@@ -445,7 +449,25 @@
             "retryDetails": "重试详情",
             "attempts": "次尝试",
             "success": "成功",
-            "failed": "失败"
+            "failed": "失败",
+            "circuitBreak": "熔断",
+            "skipped": "跳过",
+            "keyLabel": "#Key {id}{remark}",
+            "skipReason": {
+                "rate_limited": "RPM 限制",
+                "concurrency": "并发限制",
+                "cooldown_429": "429 冷却中",
+                "circuit_open": "熔断开启",
+                "disabled": "已禁用",
+                "no_key": "无可用 Key"
+            },
+            "errorClass": {
+                "stop_code": "停止码",
+                "upstream_error": "上游错误",
+                "network_error": "网络错误",
+                "timeout": "超时",
+                "circuit_open": "熔断开启"
+            }
         }
     },
     "channel": {
@@ -541,7 +563,15 @@
             "autoGroupRegex": "正则匹配",
             "matchRegex": "匹配正则",
             "matchRegexPlaceholder": "可选：用于匹配请求模型名称的正则表达式",
-            "remark": "备注"
+            "remark": "备注",
+            "rpmLimit": "RPM",
+            "concurrencyLimit": "并发",
+            "cooldownOn429Sec": "429 冷却(秒)",
+            "rpmLimitPlaceholder": "0 = 不限",
+            "concurrencyLimitPlaceholder": "0 = 不限",
+            "cooldownOn429SecPlaceholder": "秒",
+            "keyAdvancedTitle": "Key 高级设定",
+            "keyAdvancedHint": "以下 3 个值会同时作用到当前渠道内的每一个 Key。"
         }
     }
 }
