@@ -50,8 +50,11 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
                 last_use_time_stamp: k.last_use_time_stamp,
                 total_cost: k.total_cost,
                 remark: k.remark,
+                rpm_limit: k.rpm_limit,
+                concurrency_limit: k.concurrency_limit,
+                cooldown_on_429_sec: k.cooldown_on_429_sec,
             }))
-            : [{ enabled: true, channel_key: '', remark: '' }],
+            : [{ enabled: true, channel_key: '', remark: '', rpm_limit: 0, concurrency_limit: 0, cooldown_on_429_sec: 30 }],
         model: channel.model,
         custom_model: channel.custom_model,
         proxy: channel.proxy,
@@ -124,19 +127,46 @@ export function CardContent({ channel, stats }: { channel: Channel; stats: Stats
 
         const keys_to_add = nextKeys
             .filter((k) => !k.id && k.channel_key.trim())
-            .map((k) => ({ enabled: k.enabled, channel_key: k.channel_key, remark: k.remark ?? '' }));
+            .map((k) => ({
+                enabled: k.enabled,
+                channel_key: k.channel_key,
+                remark: k.remark ?? '',
+                rpm_limit: Number(k.rpm_limit ?? 0),
+                concurrency_limit: Number(k.concurrency_limit ?? 0),
+                cooldown_on_429_sec: Number(k.cooldown_on_429_sec ?? 30),
+            }));
 
         const keys_to_update = nextKeys
             .filter((k) => typeof k.id === 'number' && originalByID.has(k.id as number))
             .map((k) => {
                 const orig = originalByID.get(k.id as number)!;
-                const u: { id: number; enabled?: boolean; channel_key?: string; remark?: string } = { id: k.id as number };
+                const u: {
+                    id: number;
+                    enabled?: boolean;
+                    channel_key?: string;
+                    remark?: string;
+                    rpm_limit?: number;
+                    concurrency_limit?: number;
+                    cooldown_on_429_sec?: number;
+                } = { id: k.id as number };
                 if (k.enabled !== orig.enabled) u.enabled = k.enabled;
                 if (k.channel_key !== orig.channel_key) u.channel_key = k.channel_key;
                 if ((k.remark ?? '') !== orig.remark) u.remark = k.remark ?? '';
+                if (Number(k.rpm_limit ?? 0) !== Number(orig.rpm_limit ?? 0)) u.rpm_limit = Number(k.rpm_limit ?? 0);
+                if (Number(k.concurrency_limit ?? 0) !== Number(orig.concurrency_limit ?? 0)) u.concurrency_limit = Number(k.concurrency_limit ?? 0);
+                if (Number(k.cooldown_on_429_sec ?? 30) !== Number(orig.cooldown_on_429_sec ?? 30)) u.cooldown_on_429_sec = Number(k.cooldown_on_429_sec ?? 30);
                 return Object.keys(u).length > 1 ? u : null;
             })
-            .filter((u) => u !== null) as Array<{ id: number; enabled?: boolean; channel_key?: string; remark?: string }>;
+            .filter((u) => u !== null) as Array<{
+                id: number;
+                enabled?: boolean;
+                channel_key?: string;
+                remark?: string;
+                rpm_limit?: number;
+                concurrency_limit?: number;
+                cooldown_on_429_sec?: number;
+            }>;
+
 
         if (keys_to_add.length > 0) req.keys_to_add = keys_to_add;
         if (keys_to_update.length > 0) req.keys_to_update = keys_to_update;

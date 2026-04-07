@@ -15,12 +15,15 @@ export type AttemptStatus = 'success' | 'failed' | 'circuit_break' | 'skipped';
 export interface ChannelAttempt {
     channel_id: number;
     channel_key_id?: number;
+    channel_key_remark?: string;
     channel_name: string;
     model_name: string;
     attempt_num: number;    // 第几次尝试
     status: AttemptStatus;
     duration: number;       // 耗时(毫秒)
     sticky?: boolean;
+    skip_reason?: 'rate_limited' | 'concurrency' | 'cooldown_429' | 'circuit_open' | 'disabled' | 'no_key';
+    error_class?: string;
     msg?: string;
 }
 
