@@ -2,9 +2,11 @@ name: release
 
 on:
   push:
+    tags:
+      - 'v*'
     branches:
       - main
-
+  workflow_dispatch:
 permissions:
   contents: write
   packages: write
@@ -19,6 +21,7 @@ jobs:
         with:
           fetch-depth: 0
           ref: main
+          fetch-tags: true
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -64,7 +67,7 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
+ # ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
           tags: |
             type=raw,value=latest
             type=raw,value=${{ steps.tag.outputs.TAG_NAME }}
@@ -75,7 +78,7 @@ jobs:
         with:
           images: |
             ghcr.io/${{ github.repository }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
+# ${{ secrets.DOCKERHUB_USERNAME }}/${{ github.event.repository.name }}
           tags: |
             type=raw,value=latest-alpine
             type=raw,value=${{ steps.tag.outputs.TAG_NAME }}-alpine
@@ -99,26 +102,26 @@ jobs:
 #          username: ${{ secrets.DOCKERHUB_USERNAME }}
 #          password: ${{ secrets.DOCKERHUB_TOKEN }}
 #
-#      - name: Build and push (Alpine)
-#        uses: docker/build-push-action@v5
-#        with:
-#          context: .
-#          file: ./scripts/dockerfiles/Dockerfile.alpine
-#          push: true
-#          platforms: linux/amd64,linux/i386,linux/arm64,linux/arm/v7
-#          tags: ${{ steps.meta-alpine.outputs.tags }}
-#          labels: ${{ steps.meta-alpine.outputs.labels }}
-#          build-args: |
-#            TARGETPLATFORM
-#
-#      - name: Build and push (Debian)
-#        uses: docker/build-push-action@v5
-#        with:
-#          context: .
-#          file: ./scripts/dockerfiles/Dockerfile.debian
-#          push: true
-#          platforms: linux/amd64,linux/i386,linux/arm64,linux/arm/v7
-#          tags: ${{ steps.meta-debian.outputs.tags }}
-#          labels: ${{ steps.meta-debian.outputs.labels }}
-#          build-args: |
-#            TARGETPLATFORM
+      - name: Build and push (Alpine)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./scripts/dockerfiles/Dockerfile.alpine
+          push: true
+          platforms: linux/amd64,linux/i386,linux/arm64,linux/arm/v7
+          tags: ${{ steps.meta-alpine.outputs.tags }}
+          labels: ${{ steps.meta-alpine.outputs.labels }}
+          build-args: |
+            TARGETPLATFORM
+
+      - name: Build and push (Debian)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./scripts/dockerfiles/Dockerfile.debian
+          push: true
+          platforms: linux/amd64,linux/i386,linux/arm64,linux/arm/v7
+          tags: ${{ steps.meta-debian.outputs.tags }}
+          labels: ${{ steps.meta-debian.outputs.labels }}
+          build-args: |
+            TARGETPLATFORM
