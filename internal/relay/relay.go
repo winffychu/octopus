@@ -15,7 +15,6 @@ import (
 	dbmodel "github.com/bestruirui/octopus/internal/model"
 	"github.com/bestruirui/octopus/internal/op"
 	"github.com/bestruirui/octopus/internal/relay/balancer"
-	"github.com/bestruirui/octopus/internal/relay/limiter"
 	"github.com/bestruirui/octopus/internal/server/resp"
 	"github.com/bestruirui/octopus/internal/transformer/inbound"
 	"github.com/bestruirui/octopus/internal/transformer/model"
@@ -24,9 +23,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/tmaxmax/go-sse"
 )
-
-// 全局 key 限流器
-var sharedKeyLimiter = limiter.New()
 
 var loggedStopCodes sync.Map
 
@@ -73,10 +69,15 @@ func isStopCode(statusCode int, stopCodes []int) bool {
 }
 
 // shouldRecordCircuitFailure 判断失败是否应计入熔断。
-// 停止码会终止当前渠道内 key 轮换，但不应污染熔断状态。
+// - 停止码 (400/422): 不计入，请求格式问题不是 key 故障
+// - 上游 429: 不计入，临时限流不应污染熔断状态
+// - 5xx/timeout/network: 计入，真实故障应触发熔断保护
 func shouldRecordCircuitFailure(statusCode int, stopCodes []int) bool {
 	if statusCode <= 0 {
 		return true
+	}
+	if statusCode == 429 {
+		return false
 	}
 	return !isStopCode(statusCode, stopCodes)
 }
@@ -126,26 +127,7 @@ func summarizeChannelExhaustion(channel *dbmodel.Channel, summary channelExhaust
 	return "no available key"
 }
 
-// selectNextKey 选择下一个可用密钥（排除已尝试的）
-func selectNextKey(channel *dbmodel.Channel, excluded []int) (dbmodel.ChannelKey, bool) {
-	best := dbmodel.ChannelKey{}
-	bestSet := false
-	bestCost := 0.0
-	for _, k := range channel.Keys {
-		if !k.Enabled || k.ChannelKey == "" {
-			continue
-		}
-		if slices.Contains(excluded, k.ID) {
-			continue
-		}
-		if !bestSet || k.TotalCost < bestCost {
-			best = k
-			bestCost = k.TotalCost
-			bestSet = true
-		}
-	}
-	return best, bestSet
-}
+// selectNextKey 已删除，key 选择职责归还 Channel.GetChannelKey(excluded ...int)
 
 // Handler 处理入站请求并转发到上游服务
 func Handler(inboundType inbound.InboundType, c *gin.Context) {
@@ -255,45 +237,33 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 		exhaustionSummary := channelExhaustionSummary{}
 
 		for !keyFailoverDone {
-			// 选 key（排除已尝试的 key）
-			usedKey, ok := selectNextKey(channel, attemptedKeyIDs)
-			if !ok {
+			// 选 key（排除已尝试的 key）—— 职责在 Channel
+			usedKey := channel.GetChannelKey(attemptedKeyIDs...)
+			if usedKey.ChannelKey == "" {
 				msg := summarizeChannelExhaustion(channel, exhaustionSummary)
 				iter.Skip(channel.ID, 0, "", channel.Name, msg, dbmodel.SkipReasonNoKey)
 				lastErr = fmt.Errorf("channel %s %s", channel.Name, msg)
 				break
 			}
 
-			// 429 冷却检查
-			if usedKey.StatusCode == 429 && usedKey.LastUseTimeStamp > 0 && usedKey.CooldownOn429Sec > 0 {
-				if time.Now().Unix()-usedKey.LastUseTimeStamp < int64(usedKey.CooldownOn429Sec) {
-					exhaustionSummary.cooldown429Count++
-					iter.Skip(channel.ID, usedKey.ID, usedKey.Remark, channel.Name, "key in 429 cooldown", dbmodel.SkipReasonCooldown429)
-					attemptedKeyIDs = append(attemptedKeyIDs, usedKey.ID)
-					continue
-				}
-			}
-
-			// 熔断检查（key 维度）
+			// 熔断检查（key 维度）—— 委托 balancer
 			if iter.SkipCircuitBreak(channel.ID, usedKey.ID, usedKey.Remark, channel.Name) {
 				exhaustionSummary.circuitOpenCount++
 				attemptedKeyIDs = append(attemptedKeyIDs, usedKey.ID)
 				continue
 			}
 
-			// 并发限制
-			if !sharedKeyLimiter.TryAcquireConcurrency(usedKey.ID, usedKey.ConcurrencyLimit) {
-				exhaustionSummary.concurrencyCount++
-				iter.Skip(channel.ID, usedKey.ID, usedKey.Remark, channel.Name, "key concurrency full", dbmodel.SkipReasonConcurrency)
-				attemptedKeyIDs = append(attemptedKeyIDs, usedKey.ID)
-				continue
-			}
-
-			// RPM 限制
-			if !sharedKeyLimiter.TryConsumeRPM(usedKey.ID, usedKey.RpmLimit, time.Now()) {
-				exhaustionSummary.rateLimitedCount++
-				sharedKeyLimiter.ReleaseConcurrency(usedKey.ID)
-				iter.Skip(channel.ID, usedKey.ID, usedKey.Remark, channel.Name, "key rpm limited", dbmodel.SkipReasonRateLimited)
+			// 并发 + RPM 统一获取 —— 委托 balancer
+			acquired, release := balancer.TryAcquireKeySlot(usedKey.ID, usedKey.ConcurrencyLimit, usedKey.RpmLimit)
+			if !acquired {
+				// 区分并发满还是 RPM 超限
+				if usedKey.ConcurrencyLimit > 0 {
+					exhaustionSummary.concurrencyCount++
+					iter.Skip(channel.ID, usedKey.ID, usedKey.Remark, channel.Name, "key concurrency full", dbmodel.SkipReasonConcurrency)
+				} else {
+					exhaustionSummary.rateLimitedCount++
+					iter.Skip(channel.ID, usedKey.ID, usedKey.Remark, channel.Name, "key rpm limited", dbmodel.SkipReasonRateLimited)
+				}
 				attemptedKeyIDs = append(attemptedKeyIDs, usedKey.ID)
 				continue
 			}
@@ -308,7 +278,7 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 			}
 
 			result := ra.attempt()
-			sharedKeyLimiter.ReleaseConcurrency(usedKey.ID)
+			release() // 释放并发槽
 
 			if result.Success {
 				metrics.Save(c.Request.Context(), true, nil, iter.Attempts())
@@ -319,20 +289,17 @@ func Handler(inboundType inbound.InboundType, c *gin.Context) {
 				return
 			}
 
-			// 停止码检查。
-			// 命中 400/422 等停止码后，不再继续轮换当前渠道内的 key，
-			// 但仍允许外层逻辑继续尝试下一个渠道，以保持现有故障转移语义。
+			// 停止码：终止当前渠道内的 key 轮换
 			if result.StatusCode > 0 && isStopCode(result.StatusCode, stopCodes) {
-				log.Warnf("stop code %d matched for channel %s key %d; stopping key failover and skipping circuit failure record", result.StatusCode, channel.Name, usedKey.ID)
+				log.Warnf("stop code %d matched for channel %s key %d; stopping key failover", result.StatusCode, channel.Name, usedKey.ID)
 				lastErr = result.Err
 				keyFailoverDone = true
-				break // 停止 key 轮换，进入下一个渠道
+				break
 			}
 
 			exhaustionSummary.attemptFailed = true
 			attemptedKeyIDs = append(attemptedKeyIDs, usedKey.ID)
 			lastErr = result.Err
-			// 继续尝试下一个 key
 		}
 	}
 

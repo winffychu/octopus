@@ -1,8 +1,6 @@
 package model
 
 import (
-	"time"
-
 	"github.com/bestruirui/octopus/internal/transformer/outbound"
 )
 
@@ -130,12 +128,19 @@ func (c *Channel) GetBaseUrl() string {
 	return bestURL
 }
 
-func (c *Channel) GetChannelKey() ChannelKey {
+func (c *Channel) GetChannelKey(excluded ...int) ChannelKey {
 	if c == nil || len(c.Keys) == 0 {
 		return ChannelKey{}
 	}
 
-	nowSec := time.Now().Unix()
+	// 构建 excluded 快速查找集（O(1) 替代 slices.Contains 的 O(n)）
+	var excludedSet map[int]struct{}
+	if len(excluded) > 0 {
+		excludedSet = make(map[int]struct{}, len(excluded))
+		for _, id := range excluded {
+			excludedSet[id] = struct{}{}
+		}
+	}
 
 	best := ChannelKey{}
 	bestCost := 0.0
@@ -145,12 +150,10 @@ func (c *Channel) GetChannelKey() ChannelKey {
 		if !k.Enabled || k.ChannelKey == "" {
 			continue
 		}
-		if k.StatusCode == 429 && k.LastUseTimeStamp > 0 {
-			cooldownSec := k.CooldownOn429Sec
-			if cooldownSec > 0 {
-				if nowSec-k.LastUseTimeStamp < int64(cooldownSec) {
-					continue
-				}
+		// 排除已尝试的 key（key 轮换支持）
+		if excludedSet != nil {
+			if _, ok := excludedSet[k.ID]; ok {
+				continue
 			}
 		}
 		if !bestSet || k.TotalCost < bestCost {
