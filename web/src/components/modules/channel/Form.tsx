@@ -1000,13 +1000,48 @@ export function ChannelForm({
           </AccordionItem>
         </Accordion>
 
-        <div className="sticky bottom-0 pt-2 flex flex-col-reverse sm:flex-row justify-end gap-3 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-          {onCancel && (
-              <Button type="button" variant="outline" onClick={onCancel} className="rounded-xl" disabled={isPending}>
-                {cancelText ?? t('cancel')}
+        <div className="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl bg-muted/20 border border-border/50">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Switch
+                checked={formData.enabled}
+                onCheckedChange={(checked) => onFormDataChange({ ...formData, enabled: checked })}
+            />
+            <span className="text-sm font-medium text-card-foreground">{t('enabled')}</span>
+          </label>
+          <div className="flex items-center gap-6">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Switch
+                  checked={formData.proxy}
+                  onCheckedChange={(checked) => onFormDataChange({ ...formData, proxy: checked })}
+              />
+              <span className="text-sm text-card-foreground">{t('proxy')}</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Switch
+                  checked={formData.auto_sync}
+                  onCheckedChange={(checked) => onFormDataChange({ ...formData, auto_sync: checked })}
+              />
+              <span className="text-sm text-card-foreground">{t('autoSync')}</span>
+            </label>
+          </div>
+        </div>
+
+        <div className={`flex flex-col gap-3 pt-2 ${onCancel ? 'sm:flex-row' : ''}`}>
+          {onCancel && cancelText && (
+              <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={onCancel}
+                  className="w-full sm:flex-1 rounded-2xl h-12"
+              >
+                {cancelText}
               </Button>
           )}
-          <Button type="submit" className="rounded-xl" disabled={isPending}>
+          <Button
+              type="submit"
+              disabled={isPending}
+              className="w-full sm:flex-1 rounded-2xl h-12"
+          >
             {isPending ? pendingText : submitText}
           </Button>
         </div>
